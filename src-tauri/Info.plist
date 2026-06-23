@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 禁用 App Nap：菜单栏 App 退到后台也要让调度线程准点跑，否则到点不触发 -->
+    <key>NSAppSleepDisabled</key>
+    <true/>
+</dict>
+</plist>
