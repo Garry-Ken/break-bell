@@ -16,9 +16,11 @@
 
 | 平台 | 状态 |
 |---|---|
-| macOS | ✅ 可用（`.dmg`） |
-| Windows | ✅ 可用（`.exe` / nsis，经 CI 构建） |
-| Android | 🚧 Phase 2（需原生后台闹钟） |
+| macOS | ✅ 全屏强制休息遮罩（`.dmg`） |
+| Windows | ✅ 全屏强制休息遮罩（`.exe`，经 CI 构建） |
+| Android | ✅ v0.1：后台通知定时响铃 + App 内全屏休息遮罩；强制盖屏（覆盖其它 App / 锁屏）为后续原生增强 |
+
+桌面端用置顶无边框遮罩窗强制休息；安卓端用 `tauri-plugin-notification`（AlarmManager + 精确闹钟权限）在后台定时响铃，App 在前台时弹出 App 内休息遮罩。
 
 ## 开发
 
@@ -26,8 +28,16 @@
 pnpm install
 pnpm tauri dev      # 桌面开发（端口 5192）
 pnpm test           # 排程逻辑单元测试
-pnpm tauri build    # 出当前平台安装包
+pnpm tauri build    # 出当前平台安装包（macOS .dmg / Windows .exe）
+
+# 安卓（需 JDK17 + Android SDK/NDK）
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export ANDROID_HOME=$HOME/Library/Android/sdk
+export NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006
+pnpm tauri android build --debug --apk --target aarch64
 ```
+
+三端安装包也由 GitHub Actions 在打 `v*` tag 时自动构建并发到 [Releases](../../releases)。
 
 ## 技术栈
 
