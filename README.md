@@ -6,7 +6,7 @@
 
 ## 功能
 
-- **一键设 N 个闹钟**：选每日时段（如 09:00–22:00）自动均分；或「固定间隔」每 N 分钟。逐条可改 / 删 / 开关。
+- **一键设 N 个闹钟（番茄钟循环）**：「工作 → 休息 → 工作」，闹钟落在每段工作结束、下一段从休息结束再算（休息时间已计入间隔）。两种模式：均分时段（按次数倒推专注时长）/ 固定专注（按专注时长循环）。逐条可改 / 删 / 开关。
 - **到点**：响铃 + 全屏置顶遮罩盖住所有显示器，倒计时 + 「去喝水 · 起来拉伸」提示，结束自动消失，可选「跳过」。
 - **托盘常驻**：关窗口 = 收进菜单栏 / 托盘，调度继续跑；仅菜单「退出」才真退。
 - **设置**：铃声 + 音量（带试听）、休息时长、提示语、允许跳过、同时锁定系统（可选）、开机自启。
@@ -18,9 +18,9 @@
 |---|---|
 | macOS | ✅ 全屏强制休息遮罩（`.dmg`） |
 | Windows | ✅ 全屏强制休息遮罩（`.exe`，经 CI 构建） |
-| Android | ✅ v0.1：后台通知定时响铃 + App 内全屏休息遮罩；强制盖屏（覆盖其它 App / 锁屏）为后续原生增强 |
+| Android | ✅ 原生强制盖屏（`.apk`）：精确闹钟 + 前台服务在**任意 App 之上**画全屏悬浮窗 + 响铃震动 |
 
-桌面端用置顶无边框遮罩窗强制休息；安卓端用 `tauri-plugin-notification`（AlarmManager + 精确闹钟权限）在后台定时响铃，App 在前台时弹出 App 内休息遮罩。
+桌面端用置顶无边框遮罩窗强制休息；安卓端用 `SYSTEM_ALERT_WINDOW` 悬浮窗 + 精确 `AlarmManager` + 前台服务（`specialUse`），到点在其它 App 之上强制全屏休息，可跳过、每天自动重排、开机重排。首次设闹钟需授予「悬浮窗 / 在其它应用上层显示」与「闹钟和提醒」权限。JS→Rust(JNI)→Kotlin `AlarmBridge` 桥接。
 
 ## 开发
 
@@ -41,6 +41,6 @@ pnpm tauri android build --debug --apk --target aarch64
 
 ## 技术栈
 
-Tauri 2 · React 19 · Vite · Tailwind 3 · Rust（tokio 调度 + rodio 响铃 + 多显示器遮罩窗）。
+Tauri 2 · React 19 · Vite · Tailwind 3 · Rust（桌面 tokio 调度 + rodio 响铃 + 多显示器遮罩窗）· 安卓原生 Kotlin（AlarmManager + 前台服务 + SYSTEM_ALERT_WINDOW 悬浮窗，经 JNI 桥接）。
 
 桌面三端安装包由 GitHub Actions（`tauri-action`）在打 `v*` tag 时自动构建并发布到 Releases。
