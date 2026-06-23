@@ -136,11 +136,26 @@ impl Drop for KeepAwake {
 fn os_lock() {
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new(
-            "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession",
-        )
-        .arg("-suspend")
-        .spawn();
+        // 1) login.framework 私有 API：立即真锁屏（无需权限、不依赖系统设置）。
+        //    旧的 CGSession 路径在 macOS 较新版本已被移除，故改用此法。
+        unsafe {
+            let handle = libc::dlopen(
+                c"/System/Library/PrivateFrameworks/login.framework/login".as_ptr(),
+                libc::RTLD_NOW,
+            );
+            if !handle.is_null() {
+                let sym = libc::dlsym(handle, c"SACLockScreenImmediate".as_ptr());
+                if !sym.is_null() {
+                    let f: extern "C" fn() -> i32 = std::mem::transmute(sym);
+                    let _ = f();
+                    eprintln!("[lock] SACLockScreenImmediate");
+                    return;
+                }
+            }
+        }
+        // 2) 兜底：让显示器休眠（开了"睡眠后立即需要密码"即锁屏）
+        let _ = std::process::Command::new("pmset").arg("displaysleepnow").spawn();
+        eprintln!("[lock] pmset displaysleepnow (fallback)");
     }
     #[cfg(target_os = "windows")]
     {
@@ -189,6 +204,7 @@ fn show_overlay(app: &AppHandle, secs: u32, prompt: &str, allow_skip: bool) {
     // macOS：创建窗口必须在主线程；调度器/命令都在后台线程，必须 marshal 回主线程
     let _ = app.run_on_main_thread(move || {
         let monitors = app2.available_monitors().unwrap_or_default();
+        eprintln!("[overlay] on main thread, monitors={}", monitors.len());
         let prompt_enc = pct(&prompt);
         for (i, m) in monitors.iter().enumerate() {
             let label = format!("overlay-{i}");
@@ -217,6 +233,7 @@ fn show_overlay(app: &AppHandle, secs: u32, prompt: &str, allow_skip: bool) {
                     raise_above_everything(&win);
                     let _ = win.show();
                     let _ = win.set_focus();
+                    eprintln!("[overlay] window {label} shown");
                 }
                 Err(e) => eprintln!("[overlay] build failed: {e}"),
             }
@@ -242,13 +259,18 @@ fn fire_break(app: &AppHandle, cfg: &RuntimeConfig) {
         let st = app.state::<AppState>();
         *st.break_active.lock().unwrap() = true;
     }
-    play_ring_internal(&cfg.sound, cfg.volume);
     let secs = cfg.break_minutes.max(1) * 60;
+    eprintln!("[break] fire_break: os_lock={} secs={}", cfg.os_lock, secs);
+    play_ring_internal(&cfg.sound, cfg.volume);
+
+    // 遮罩永远弹（可靠的强制休息核心，不依赖任何权限/系统命令）
+    show_overlay(app, secs, &cfg.prompt, cfg.allow_skip);
 
     if cfg.os_lock {
+        // 额外尝试真·系统锁屏；不开 keepawake，让显示器能睡/锁
         os_lock();
     } else {
-        show_overlay(app, secs, &cfg.prompt, cfg.allow_skip);
+        // 保持亮屏，遮罩可见
         let st = app.state::<AppState>();
         *st.keepawake.lock().unwrap() = Some(KeepAwake::start());
     }
@@ -378,6 +400,7 @@ fn spawn_scheduler(app: AppHandle) {
             let st = app.state::<AppState>();
             *st.last_tick.lock().unwrap() = Some(Local::now());
         }
+        eprintln!("[sched] scheduler thread started");
         loop {
             std::thread::sleep(Duration::from_secs(10));
             let st = app.state::<AppState>();

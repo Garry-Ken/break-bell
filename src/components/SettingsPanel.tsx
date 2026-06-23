@@ -89,7 +89,7 @@ export default function SettingsPanel({
         <div className="pr-3">
           <div className="text-[14px] text-ink-soft">同时锁定系统</div>
           <div className="text-[11px] text-ink-faint">
-            到点直接锁屏（替代遮罩）；需用密码/指纹解锁
+            全屏遮罩之外，到点再真锁一次屏；需密码/指纹解锁
           </div>
         </div>
         <Switch on={config.osLock} onChange={(v) => update({ osLock: v })} />
