@@ -184,48 +184,56 @@ fn pct(s: &str) -> String {
 
 #[cfg(desktop)]
 fn show_overlay(app: &AppHandle, secs: u32, prompt: &str, allow_skip: bool) {
-    let monitors = app.available_monitors().unwrap_or_default();
-    let prompt_enc = pct(prompt);
-    for (i, m) in monitors.iter().enumerate() {
-        let label = format!("overlay-{i}");
-        if app.get_webview_window(&label).is_some() {
-            continue;
-        }
-        let url = format!(
-            "index.html?overlay=1&secs={}&skip={}&prompt={}",
-            secs, allow_skip as u8, prompt_enc
-        );
-        let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
-            .decorations(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .visible_on_all_workspaces(true)
-            .resizable(false)
-            .shadow(false)
-            .focused(true)
-            .visible(false)
-            .build();
-        match built {
-            Ok(win) => {
-                let _ = win.set_position(*m.position());
-                let _ = win.set_size(*m.size());
-                #[cfg(target_os = "macos")]
-                raise_above_everything(&win);
-                let _ = win.show();
-                let _ = win.set_focus();
+    let app2 = app.clone();
+    let prompt = prompt.to_string();
+    // macOS：创建窗口必须在主线程；调度器/命令都在后台线程，必须 marshal 回主线程
+    let _ = app.run_on_main_thread(move || {
+        let monitors = app2.available_monitors().unwrap_or_default();
+        let prompt_enc = pct(&prompt);
+        for (i, m) in monitors.iter().enumerate() {
+            let label = format!("overlay-{i}");
+            if app2.get_webview_window(&label).is_some() {
+                continue;
             }
-            Err(e) => eprintln!("[overlay] build failed: {e}"),
+            let url = format!(
+                "index.html?overlay=1&secs={}&skip={}&prompt={}",
+                secs, allow_skip as u8, prompt_enc
+            );
+            let built = WebviewWindowBuilder::new(&app2, &label, WebviewUrl::App(url.into()))
+                .decorations(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .visible_on_all_workspaces(true)
+                .resizable(false)
+                .shadow(false)
+                .focused(true)
+                .visible(false)
+                .build();
+            match built {
+                Ok(win) => {
+                    let _ = win.set_position(*m.position());
+                    let _ = win.set_size(*m.size());
+                    #[cfg(target_os = "macos")]
+                    raise_above_everything(&win);
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+                Err(e) => eprintln!("[overlay] build failed: {e}"),
+            }
         }
-    }
+    });
 }
 
 #[cfg(desktop)]
 fn close_overlays(app: &AppHandle) {
-    for (label, win) in app.webview_windows() {
-        if label.starts_with("overlay-") {
-            let _ = win.close();
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        for (label, win) in app2.webview_windows() {
+            if label.starts_with("overlay-") {
+                let _ = win.close();
+            }
         }
-    }
+    });
 }
 
 #[cfg(desktop)]
@@ -247,8 +255,8 @@ fn fire_break(app: &AppHandle, cfg: &RuntimeConfig) {
     emit_status(app);
 
     let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(secs as u64)).await;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(secs as u64));
         end_break(&app2);
     });
 }
@@ -364,14 +372,14 @@ fn today_at(hhmm: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
 
 #[cfg(desktop)]
 fn spawn_scheduler(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+    // 用独立系统线程跑，避开 tokio time 驱动的任何不确定性（每 10s 比对墙钟）
+    std::thread::spawn(move || {
         {
             let st = app.state::<AppState>();
             *st.last_tick.lock().unwrap() = Some(Local::now());
         }
-        let mut tick = tokio::time::interval(Duration::from_secs(15));
         loop {
-            tick.tick().await;
+            std::thread::sleep(Duration::from_secs(10));
             let st = app.state::<AppState>();
 
             let paused = *st.paused.lock().unwrap();
@@ -462,8 +470,8 @@ fn preview_break(app: AppHandle, state: State<AppState>, seconds: u32, prompt: S
     *state.keepawake.lock().unwrap() = Some(KeepAwake::start());
     emit_status(&app);
     let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(secs as u64)).await;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(secs as u64));
         end_break(&app2);
     });
 }
