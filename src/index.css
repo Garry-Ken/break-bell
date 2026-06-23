@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+@layer base {
+  body {
+    @apply antialiased text-ink bg-[#f5f5f7];
+    font-feature-settings: 'tnum' 1;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-[20px] bg-white border border-black/[0.05] shadow-apple;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium leading-none;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-brand-500 px-4 py-2.5 text-[14px] font-semibold text-white transition hover:bg-brand-600 active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-black/[0.04] px-3.5 py-2 text-[13px] font-medium text-ink-soft transition hover:bg-black/[0.07] active:scale-[0.98];
+  }
+  .seg {
+    @apply inline-flex rounded-full bg-black/[0.05] p-0.5 text-[13px] font-medium;
+  }
+  .seg-item {
+    @apply rounded-full px-3.5 py-1.5 text-ink-mute transition cursor-pointer;
+  }
+  .seg-item-on {
+    @apply bg-white text-ink shadow-sm;
+  }
+  .field {
+    @apply rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-[14px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+  }
+  .row {
+    @apply flex items-center justify-between gap-3;
+  }
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.16);
+    border-radius: 999px;
+  }
+}
+
+/* iOS-style switch */
+.switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+  transition: background 0.2s;
+  flex: none;
+  cursor: pointer;
+}
+.switch[data-on='true'] {
+  background: #34c759;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s;
+}
+.switch[data-on='true']::after {
+  transform: translateX(18px);
+}

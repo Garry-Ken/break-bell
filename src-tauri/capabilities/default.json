@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主面板 + 动态遮罩窗的权限",
+  "windows": ["main", "overlay-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:event:default",
+    "store:default",
+    "autostart:default"
+  ]
+}

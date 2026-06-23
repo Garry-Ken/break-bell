@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# frontend build
+dist/
+.vite/
+
+# rust / tauri build
+src-tauri/target/
+
+# tauri generated (schemas etc.); Android/iOS gen re-created by `tauri <platform> init`
+src-tauri/gen/
+
+# logs / os
+*.log
+.DS_Store
