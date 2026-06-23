@@ -9,12 +9,11 @@ import {
   onStatusChanged,
   setPaused as ipcSetPaused,
 } from './lib/ipc'
-import { rescheduleMobile } from './lib/mobile-alarm'
+import { applyMobile } from './lib/mobile-native'
 import StatusBar from './components/StatusBar'
 import SetupCard from './components/SetupCard'
 import ScheduleList from './components/ScheduleList'
 import SettingsPanel from './components/SettingsPanel'
-import OverlayRoot from './components/overlay/OverlayRoot'
 
 type Tab = 'schedule' | 'settings'
 
@@ -22,7 +21,6 @@ export default function App() {
   const [config, setConfig] = useState<Config | null>(null)
   const [paused, setPaused] = useState(false)
   const [tab, setTab] = useState<Tab>('schedule')
-  const [breakNow, setBreakNow] = useState(false) // 移动端 App 内全屏休息
   const loadedOnce = useRef(false)
 
   // 初始加载
@@ -57,24 +55,11 @@ export default function App() {
     }
   }, [])
 
-  // 移动端：配置/暂停变化时重排本地通知（后台定时响铃）
+  // 安卓：配置/暂停变化时，把日程交给原生 AlarmBridge（精确闹钟 + 悬浮窗强制休息）
   useEffect(() => {
     if (!config || !isMobile) return
-    rescheduleMobile(config, paused)
+    applyMobile(config, paused)
   }, [config, paused])
-
-  // 移动端：App 在前台时收到提醒 → 弹出 App 内全屏休息遮罩
-  useEffect(() => {
-    if (!isMobile) return
-    let un: (() => void) | undefined
-    import('@tauri-apps/plugin-notification')
-      .then(({ onNotificationReceived }) =>
-        onNotificationReceived(() => setBreakNow(true)),
-      )
-      .then((listener) => (un = () => listener.unregister()))
-      .catch(() => {})
-    return () => un?.()
-  }, [])
 
   const update = (patch: Partial<Config>) => setConfig((c) => (c ? { ...c, ...patch } : c))
 
@@ -89,7 +74,6 @@ export default function App() {
   }
 
   return (
-    <>
     <div className="mx-auto flex h-full max-w-[460px] flex-col px-4 pb-4 pt-5">
       {/* 头部 */}
       <header className="mb-4 flex items-center gap-2.5 px-1">
@@ -134,15 +118,6 @@ export default function App() {
         )}
       </main>
     </div>
-    {breakNow && (
-      <OverlayRoot
-        secs={Math.max(1, config.breakMinutes * 60)}
-        prompt={config.prompt}
-        allowSkip={config.allowSkip}
-        onClose={() => setBreakNow(false)}
-      />
-    )}
-    </>
   )
 }
 

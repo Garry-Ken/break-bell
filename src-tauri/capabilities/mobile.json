@@ -1,13 +1,8 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
-  "description": "移动端权限：本地通知（后台定时响铃）",
+  "description": "移动端权限（原生闹钟/悬浮窗由 AlarmBridge 处理，不走插件 ACL）",
   "platforms": ["android", "iOS"],
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "store:default",
-    "notification:default"
-  ]
+  "permissions": ["core:default", "core:event:default", "store:default"]
 }

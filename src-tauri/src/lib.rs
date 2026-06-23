@@ -298,6 +298,59 @@ fn emit_status(app: &AppHandle) {
     let _ = app.emit("status-changed", payload);
 }
 
+// ───────────────────────── 安卓原生桥（JNI → AlarmBridge.kt） ─────────────────────────
+
+#[cfg(target_os = "android")]
+fn call_alarm_bridge(method: &str, json: Option<&str>) -> Result<(), String> {
+    use jni::objects::{JObject, JValue};
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.map_err(|e| e.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|e| e.to_string())?;
+    let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+    match json {
+        Some(j) => {
+            let jstr = env.new_string(j).map_err(|e| e.to_string())?;
+            let jobj = JObject::from(jstr);
+            env.call_static_method(
+                "com/garry/breakbell/AlarmBridge",
+                method,
+                "(Landroid/content/Context;Ljava/lang/String;)V",
+                &[JValue::Object(&activity), JValue::Object(&jobj)],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        None => {
+            env.call_static_method(
+                "com/garry/breakbell/AlarmBridge",
+                method,
+                "(Landroid/content/Context;)V",
+                &[JValue::Object(&activity)],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn android_apply(times: Vec<String>, break_minutes: u32, prompt: String, allow_skip: bool) -> Result<(), String> {
+    let json = serde_json::json!({
+        "times": times,
+        "breakMinutes": break_minutes,
+        "prompt": prompt,
+        "allowSkip": allow_skip,
+    })
+    .to_string();
+    call_alarm_bridge("schedule", Some(&json))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn android_cancel() -> Result<(), String> {
+    call_alarm_bridge("cancel", None)
+}
+
 // ───────────────────────── 调度循环（桌面） ─────────────────────────
 
 #[cfg(desktop)]
@@ -504,9 +557,6 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState::default());
 
-    #[cfg(mobile)]
-    let builder = builder.plugin(tauri_plugin_notification::init());
-
     let builder = builder
         .setup(|app| {
             load_config_from_store(app.handle());
@@ -544,7 +594,15 @@ pub fn run() {
             }
         });
 
-    #[cfg(mobile)]
+    #[cfg(target_os = "android")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        apply_schedule,
+        set_paused,
+        get_status,
+        android_apply,
+        android_cancel,
+    ]);
+    #[cfg(all(mobile, not(target_os = "android")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         apply_schedule,
         set_paused,

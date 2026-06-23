@@ -26,9 +26,10 @@ tauri-plugin-autostart = "2"
 tokio = { version = "1", features = ["time", "rt"] }
 rodio = "0.19"
 
-# 移动端：本地通知插件(AlarmManager 后台定时响铃)
-[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-notification = "2"
+# 安卓：JNI 调用原生 AlarmBridge（精确闹钟 + 悬浮窗强制休息）
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
 
 # macOS：抬高遮罩窗 NSWindow 层级
 [target.'cfg(target_os = "macos")'.dependencies]
