@@ -1,59 +1,71 @@
 import { describe, it, expect } from 'vitest'
-import { computeEvenIntervals, computeFixedInterval, buildAlarms, nextAlarm } from './schedule'
+import {
+  computeCycle,
+  computeEvenCycles,
+  evenWorkMinutes,
+  buildAlarms,
+  nextAlarm,
+} from './schedule'
 import { minutesToHHMM } from './format'
 
-describe('computeEvenIntervals', () => {
-  it('15 个闹钟落在 9:00–22:00，含首尾', () => {
-    const r = computeEvenIntervals(540, 1320, 15)
-    expect(r.length).toBe(15)
-    expect(r[0]).toBe(540) // 09:00
-    expect(r[r.length - 1]).toBe(1320) // 22:00
-    expect(minutesToHHMM(r[0])).toBe('09:00')
-    expect(minutesToHHMM(r[14])).toBe('22:00')
-    // 单调递增
-    for (let i = 1; i < r.length; i++) expect(r[i]).toBeGreaterThan(r[i - 1])
+describe('computeCycle（固定专注：工作→休息→工作）', () => {
+  it('9:00 起 专注45+休息5，闹钟落在每段工作结束', () => {
+    const r = computeCycle(540, 45, 5, 1320) // 9:00–22:00
+    expect(minutesToHHMM(r[0])).toBe('09:45') // 第一次：9:00+45
+    expect(minutesToHHMM(r[1])).toBe('10:35') // 休到9:50，再+45
+    expect(minutesToHHMM(r[2])).toBe('11:25')
+    // 相邻闹钟间隔 = 工作45 + 休息5 = 50 分
+    for (let i = 1; i < r.length; i++) expect(r[i] - r[i - 1]).toBe(50)
+    expect(r[r.length - 1]).toBeLessThanOrEqual(1320)
   })
 
-  it('count=1 只在 start', () => {
-    expect(computeEvenIntervals(540, 1320, 1)).toEqual([540])
+  it('不在 start 立刻响（第一次是 start+work）', () => {
+    const r = computeCycle(540, 45, 5, 1320)
+    expect(r[0]).toBe(585)
+    expect(r.includes(540)).toBe(false)
   })
 
-  it('count<=0 返回空', () => {
-    expect(computeEvenIntervals(540, 1320, 0)).toEqual([])
-    expect(computeEvenIntervals(540, 1320, -3)).toEqual([])
-  })
-
-  it('end<=start 退化为单点（仅作兜底，UI 会拦截无效区间）', () => {
-    expect(computeEvenIntervals(600, 600, 5)).toEqual([600])
-    expect(computeEvenIntervals(700, 600, 5)).toEqual([700])
-  })
-
-  it('窗口短于数量时去重，不产生重复时刻', () => {
-    const r = computeEvenIntervals(600, 603, 10) // 只有 4 个不同分钟
-    expect(new Set(r).size).toBe(r.length)
-    expect(r.every((m) => m >= 600 && m <= 603)).toBe(true)
+  it('work<=0 → []，maxCount 生效', () => {
+    expect(computeCycle(540, 0, 5, 1320)).toEqual([])
+    expect(computeCycle(0, 10, 5, 1439, 6).length).toBe(6)
   })
 })
 
-describe('computeFixedInterval', () => {
-  it('从 9:00 每 45 分钟到 12:00', () => {
-    const r = computeFixedInterval(540, 45, 720)
-    expect(r).toEqual([540, 585, 630, 675, 720])
+describe('computeEvenCycles（均分：倒推工作时长铺满窗口）', () => {
+  it('9:00–22:00 放 15 个周期，休息5 → 工作47', () => {
+    const r = computeEvenCycles(540, 1320, 15, 5)
+    expect(r.length).toBe(15)
+    expect(minutesToHHMM(r[0])).toBe('09:47') // 9:00 + work(47)
+    expect(minutesToHHMM(r[14])).toBe('21:55') // 末段休息恰好到 22:00
+    expect(r[r.length - 1]).toBeLessThan(1320)
+    // 相邻间隔 = 工作47 + 休息5 = 52
+    for (let i = 1; i < r.length; i++) expect(r[i] - r[i - 1]).toBe(52)
   })
-  it('step<=0 返回空', () => {
-    expect(computeFixedInterval(540, 0, 720)).toEqual([])
+
+  it('窗口装不下这么多休息 → []', () => {
+    expect(computeEvenCycles(540, 600, 20, 5)).toEqual([]) // 60 分钟塞 20×5 休息
   })
-  it('受 maxCount 限制', () => {
-    const r = computeFixedInterval(0, 1, 1439, 10)
-    expect(r.length).toBe(10)
+
+  it('count<=0 / end<=start → []', () => {
+    expect(computeEvenCycles(540, 1320, 0, 5)).toEqual([])
+    expect(computeEvenCycles(700, 600, 5, 5)).toEqual([])
+  })
+})
+
+describe('evenWorkMinutes', () => {
+  it('倒推工作时长', () => {
+    expect(evenWorkMinutes(540, 1320, 15, 5)).toBe(47)
+  })
+  it('装不下返回 0', () => {
+    expect(evenWorkMinutes(540, 600, 20, 5)).toBe(0)
   })
 })
 
 describe('buildAlarms', () => {
   it('生成唯一 id 且默认启用', () => {
-    const a = buildAlarms([540, 600])
+    const a = buildAlarms([585, 635])
     expect(a.length).toBe(2)
-    expect(a[0].time).toBe('09:00')
+    expect(a[0].time).toBe('09:45')
     expect(a[0].enabled).toBe(true)
     expect(a[0].id).not.toBe(a[1].id)
   })
@@ -62,7 +74,7 @@ describe('buildAlarms', () => {
 describe('nextAlarm', () => {
   const alarms = buildAlarms([540, 720, 1320]) // 9:00 12:00 22:00
   it('选最近的未来项', () => {
-    const r = nextAlarm(alarms, 600) // 10:00 → 下一个 12:00
+    const r = nextAlarm(alarms, 600) // 10:00 → 12:00
     expect(r?.alarm.time).toBe('12:00')
     expect(r?.inMin).toBe(120)
   })

@@ -2,34 +2,65 @@ import type { Alarm } from '../types'
 import { minutesToHHMM } from './format'
 
 /**
- * 均分模式：在 [startMin, endMin] 区间内放 count 个闹钟，含首尾端点。
- * step = (end-start)/(count-1)，所以第一个落在 start、最后一个落在 end。
- * 边界：count<=0 → []；count===1 → [start]；end<=start → [start]（退化，UI 会拦截）。
+ * 周期/番茄钟模型：工作 workMin → 休息 breakMin → 工作 …
+ * 闹钟落在每段工作结束(=休息开始)的时刻；下一段工作从「上一段休息结束」再算 workMin。
+ * 例：start=9:00, work=45, break=5 → 9:45(休到9:50), 10:35(休到10:40), 11:25 …
+ *
+ * 固定专注模式：从 startMin 起一直循环，直到下一个闹钟会超过 endMin，或达到 maxCount。
+ * 边界：workMin<=0 → []。
  */
-export function computeEvenIntervals(startMin: number, endMin: number, count: number): number[] {
-  if (count <= 0) return []
-  if (count === 1) return [startMin]
-  if (endMin <= startMin) return [startMin]
-  const step = (endMin - startMin) / (count - 1)
+export function computeCycle(
+  startMin: number,
+  workMin: number,
+  breakMin: number,
+  endMin: number,
+  maxCount = 48,
+): number[] {
+  if (workMin <= 0) return []
   const out: number[] = []
-  for (let i = 0; i < count; i++) out.push(Math.round(startMin + i * step))
+  let t = startMin
+  while (out.length < maxCount) {
+    t += workMin // 一段工作结束 → 该休息了
+    if (t > endMin) break
+    out.push(Math.round(t))
+    t += breakMin // 休息结束 → 下一段工作开始
+  }
   return dedupeSorted(out)
 }
 
 /**
- * 固定间隔模式：从 startMin 起每 stepMin 一个，直到超过 endMin 或达到 maxCount。
- * 边界：step<=0 → []。
+ * 均分模式：在 [start,end] 内放 count 个「工作+休息」周期，自动倒推工作时长，
+ * 使 count 段工作 + count 段休息正好铺满窗口。
+ * work = (window - count*break) / count；work<=0(窗口装不下) → []。
  */
-export function computeFixedInterval(
+export function computeEvenCycles(
   startMin: number,
-  stepMin: number,
   endMin: number,
-  maxCount = 48,
+  count: number,
+  breakMin: number,
 ): number[] {
-  if (stepMin <= 0) return []
+  if (count <= 0 || endMin <= startMin) return []
+  const work = (endMin - startMin - count * breakMin) / count
+  if (work <= 0) return []
   const out: number[] = []
-  for (let t = startMin; t <= endMin && out.length < maxCount; t += stepMin) out.push(Math.round(t))
+  let t = startMin
+  for (let i = 0; i < count; i++) {
+    t += work
+    out.push(Math.round(t))
+    t += breakMin
+  }
   return dedupeSorted(out)
+}
+
+/** 均分模式倒推出的工作时长（分钟），UI 用于展示；装不下返回 0。 */
+export function evenWorkMinutes(
+  startMin: number,
+  endMin: number,
+  count: number,
+  breakMin: number,
+): number {
+  if (count <= 0 || endMin <= startMin) return 0
+  return Math.max(0, Math.round((endMin - startMin - count * breakMin) / count))
 }
 
 function dedupeSorted(mins: number[]): number[] {
