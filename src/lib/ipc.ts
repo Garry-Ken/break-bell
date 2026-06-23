@@ -10,6 +10,10 @@ export const inTauri = (() => {
   }
 })()
 
+/** 是否运行在移动端(安卓/iOS) Tauri webview 里。 */
+export const isMobile =
+  inTauri && typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+
 async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
   if (!inTauri) {
     console.info(`[web] invoke skipped: ${cmd}`, args ?? '')

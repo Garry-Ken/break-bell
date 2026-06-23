@@ -8,8 +8,17 @@ dist/
 # rust / tauri build
 src-tauri/target/
 
-# tauri generated (schemas etc.); Android/iOS gen re-created by `tauri <platform> init`
-src-tauri/gen/
+# tauri generated schemas (regenerated each build)
+src-tauri/gen/schemas/
+
+# android build artifacts (项目源码提交以便可复现构建，仅忽略构建产物)
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/app/.cxx/
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/.idea/
 
 # logs / os
 *.log

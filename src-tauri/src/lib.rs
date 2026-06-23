@@ -1,13 +1,19 @@
-use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
+#[cfg(desktop)]
+use std::collections::HashMap;
 
-use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+#[cfg(desktop)]
+use std::time::Duration;
+#[cfg(desktop)]
+use chrono::{DateTime, Local, TimeZone};
+#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
 #[cfg(target_os = "windows")]
@@ -69,11 +75,13 @@ struct AppState {
     paused: Mutex<bool>,
     break_active: Mutex<bool>,
     keepawake: Mutex<Option<KeepAwake>>,
+    #[cfg(desktop)]
     last_tick: Mutex<Option<DateTime<Local>>>,
+    #[cfg(desktop)]
     fired: Mutex<HashMap<String, String>>, // "HH:MM" -> "YYYY-MM-DD"
 }
 
-// ───────────────────────── 防止息屏 ─────────────────────────
+// ───────────────────────── 防止息屏（桌面） ─────────────────────────
 
 struct KeepAwake {
     #[cfg(target_os = "macos")]
@@ -84,17 +92,16 @@ struct KeepAwake {
     _noop: (),
 }
 
+#[cfg(desktop)]
 impl KeepAwake {
     fn start() -> Self {
         #[cfg(target_os = "macos")]
         let me = {
-            // caffeinate -d 阻止显示器休眠；kill 子进程即释放
             let child = std::process::Command::new("caffeinate").arg("-d").spawn().ok();
             KeepAwake { child }
         };
         #[cfg(target_os = "windows")]
         let me = {
-            // SetThreadExecutionState 有线程亲和性：在一条常驻线程上设置，drop 时复位
             let (tx, rx) = std::sync::mpsc::channel::<()>();
             std::thread::spawn(move || {
                 const ES_CONTINUOUS: u32 = 0x8000_0000;
@@ -103,15 +110,13 @@ impl KeepAwake {
                 unsafe {
                     SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
                 }
-                let _ = rx.recv(); // 阻塞直到 sender 被 drop
+                let _ = rx.recv();
                 unsafe {
                     SetThreadExecutionState(ES_CONTINUOUS);
                 }
             });
             KeepAwake { _stop: Some(tx) }
         };
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let me = KeepAwake { _noop: () };
         me
     }
 }
@@ -122,13 +127,12 @@ impl Drop for KeepAwake {
         if let Some(c) = self.child.as_mut() {
             let _ = c.kill();
         }
-        // windows: 丢弃 _stop sender → 常驻线程 recv 返回 → 复位执行状态
     }
 }
 
-// ───────────────────────── 平台动作 ─────────────────────────
+// ───────────────────────── 平台动作（桌面） ─────────────────────────
 
-/// 真·系统锁屏（设置里「同时锁定系统」开启时调用）。
+#[cfg(desktop)]
 fn os_lock() {
     #[cfg(target_os = "macos")]
     {
@@ -146,7 +150,6 @@ fn os_lock() {
     }
 }
 
-/// macOS：把遮罩窗抬到菜单栏/Dock 之上，并允许浮于全屏 App 之上。
 #[cfg(target_os = "macos")]
 fn raise_above_everything(win: &tauri::WebviewWindow) {
     use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
@@ -154,8 +157,7 @@ fn raise_above_everything(win: &tauri::WebviewWindow) {
     if let Ok(ns) = win.ns_window() {
         let ns = ns as id;
         unsafe {
-            // NSStatusWindowLevel = 25，高于菜单栏与 Dock
-            ns.setLevel_(25);
+            ns.setLevel_(25); // NSStatusWindowLevel，高于菜单栏与 Dock
             let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
                 | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
                 | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary;
@@ -164,7 +166,7 @@ fn raise_above_everything(win: &tauri::WebviewWindow) {
     }
 }
 
-/// 最小 percent-encode，保证中文提示语安全塞进 query。
+#[cfg(desktop)]
 fn pct(s: &str) -> String {
     let mut out = String::new();
     for b in s.as_bytes() {
@@ -178,9 +180,9 @@ fn pct(s: &str) -> String {
     out
 }
 
-// ───────────────────────── 遮罩 / 休息 ─────────────────────────
+// ───────────────────────── 遮罩 / 休息（桌面） ─────────────────────────
 
-/// 每块显示器建一个全屏置顶无边框遮罩窗。
+#[cfg(desktop)]
 fn show_overlay(app: &AppHandle, secs: u32, prompt: &str, allow_skip: bool) {
     let monitors = app.available_monitors().unwrap_or_default();
     let prompt_enc = pct(prompt);
@@ -205,7 +207,6 @@ fn show_overlay(app: &AppHandle, secs: u32, prompt: &str, allow_skip: bool) {
             .build();
         match built {
             Ok(win) => {
-                // 无边框窗有时忽略 builder 初值，建完按显示器物理坐标兜底
                 let _ = win.set_position(*m.position());
                 let _ = win.set_size(*m.size());
                 #[cfg(target_os = "macos")]
@@ -218,6 +219,7 @@ fn show_overlay(app: &AppHandle, secs: u32, prompt: &str, allow_skip: bool) {
     }
 }
 
+#[cfg(desktop)]
 fn close_overlays(app: &AppHandle) {
     for (label, win) in app.webview_windows() {
         if label.starts_with("overlay-") {
@@ -226,7 +228,7 @@ fn close_overlays(app: &AppHandle) {
     }
 }
 
-/// 触发一次完整休息：响铃 + （锁屏 或 遮罩）+ 到时收尾。
+#[cfg(desktop)]
 fn fire_break(app: &AppHandle, cfg: &RuntimeConfig) {
     {
         let st = app.state::<AppState>();
@@ -244,7 +246,6 @@ fn fire_break(app: &AppHandle, cfg: &RuntimeConfig) {
     }
     emit_status(app);
 
-    // 到时收尾（end_break 幂等：被「跳过」提前结束也安全）
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(secs as u64)).await;
@@ -252,7 +253,7 @@ fn fire_break(app: &AppHandle, cfg: &RuntimeConfig) {
     });
 }
 
-/// 结束当前休息：关遮罩、停防息屏、清状态。幂等。
+#[cfg(desktop)]
 fn end_break(app: &AppHandle) {
     let st = app.state::<AppState>();
     {
@@ -267,6 +268,7 @@ fn end_break(app: &AppHandle) {
     emit_status(app);
 }
 
+#[cfg(desktop)]
 fn play_ring_internal(sound: &str, volume: f32) {
     let bytes: &'static [u8] = match sound {
         "bell" => include_bytes!("../../public/sounds/bell.wav"),
@@ -280,7 +282,7 @@ fn play_ring_internal(sound: &str, volume: f32) {
                 sink.set_volume(vol);
                 if let Ok(src) = rodio::Decoder::new(std::io::Cursor::new(bytes)) {
                     sink.append(src);
-                    sink.sleep_until_end(); // 持有 _stream 直到放完，否则静音
+                    sink.sleep_until_end();
                 }
             }
         }
@@ -296,8 +298,9 @@ fn emit_status(app: &AppHandle) {
     let _ = app.emit("status-changed", payload);
 }
 
-// ───────────────────────── 调度循环 ─────────────────────────
+// ───────────────────────── 调度循环（桌面） ─────────────────────────
 
+#[cfg(desktop)]
 fn today_at(hhmm: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     let (h, m) = hhmm.split_once(':')?;
     let h: u32 = h.parse().ok()?;
@@ -306,10 +309,10 @@ fn today_at(hhmm: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     Local.from_local_datetime(&naive).single()
 }
 
+#[cfg(desktop)]
 fn spawn_scheduler(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         {
-            // 启动时把基准设为「现在」，避免补发今天早些时候已过的闹钟
             let st = app.state::<AppState>();
             *st.last_tick.lock().unwrap() = Some(Local::now());
         }
@@ -338,9 +341,7 @@ fn spawn_scheduler(app: AppHandle) {
             let mut fire: Option<RuntimeConfig> = None;
             for a in cfg.alarms.iter().filter(|a| a.enabled) {
                 if let Some(t) = today_at(&a.time, now) {
-                    // 到点判定：上一拍 < 闹钟时刻 <= 现在
                     if t > last && t <= now {
-                        // 同日去重
                         {
                             let mut fired = st.fired.lock().unwrap();
                             if fired.get(&a.time).map(|d| d == &today).unwrap_or(false) {
@@ -348,7 +349,6 @@ fn spawn_scheduler(app: AppHandle) {
                             }
                             fired.insert(a.time.clone(), today.clone());
                         }
-                        // 睡眠唤醒后的陈旧闹钟（错过超过 2×休息时长）静默跳过
                         let age = (now - t).num_seconds();
                         if age >= 2 * break_secs {
                             continue;
@@ -368,7 +368,7 @@ fn spawn_scheduler(app: AppHandle) {
     });
 }
 
-// ───────────────────────── 命令 ─────────────────────────
+// ───────────────────────── 命令（共享） ─────────────────────────
 
 #[tauri::command]
 fn apply_schedule(state: State<AppState>, config: RuntimeConfig) {
@@ -389,11 +389,15 @@ fn get_status(state: State<AppState>) -> Status {
     }
 }
 
+// ───────────────────────── 命令（桌面） ─────────────────────────
+
+#[cfg(desktop)]
 #[tauri::command]
 fn play_ring(sound: String, volume: f32) {
     play_ring_internal(&sound, volume);
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn preview_break(app: AppHandle, state: State<AppState>, seconds: u32, prompt: String, allow_skip: bool) {
     if *state.break_active.lock().unwrap() {
@@ -411,30 +415,28 @@ fn preview_break(app: AppHandle, state: State<AppState>, seconds: u32, prompt: S
     });
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn skip_break(app: AppHandle) {
     end_break(&app);
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
-    #[cfg(desktop)]
-    {
-        use tauri_plugin_autostart::ManagerExt;
-        let m = app.autolaunch();
-        if enabled {
-            m.enable().map_err(|e| e.to_string())?;
-        } else {
-            m.disable().map_err(|e| e.to_string())?;
-        }
+    use tauri_plugin_autostart::ManagerExt;
+    let m = app.autolaunch();
+    if enabled {
+        m.enable().map_err(|e| e.to_string())?;
+    } else {
+        m.disable().map_err(|e| e.to_string())?;
     }
-    #[cfg(not(desktop))]
-    let _ = (app, enabled);
     Ok(())
 }
 
-// ───────────────────────── 托盘 ─────────────────────────
+// ───────────────────────── 托盘（桌面） ─────────────────────────
 
+#[cfg(desktop)]
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -443,6 +445,7 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "打开歇钟", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "暂停 / 恢复", true, None::<&str>)?;
@@ -465,7 +468,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
                 emit_status(app);
             }
-            "quit" => app.exit(0), // 唯一真正退出的路径
+            "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -497,9 +500,32 @@ fn load_config_from_store(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
-        .manage(AppState::default())
+        .manage(AppState::default());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+
+    let builder = builder
+        .setup(|app| {
+            load_config_from_store(app.handle());
+            #[cfg(desktop)]
+            {
+                app.handle().plugin(tauri_plugin_autostart::init(
+                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                    None,
+                ))?;
+                #[cfg(target_os = "macos")]
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                build_tray(app.handle())?;
+                spawn_scheduler(app.handle().clone());
+            }
+            Ok(())
+        });
+
+    #[cfg(desktop)]
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
             apply_schedule,
             set_paused,
@@ -509,37 +535,32 @@ pub fn run() {
             skip_break,
             set_autostart,
         ])
-        .setup(|app| {
-            #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_autostart::init(
-                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                None,
-            ))?;
-
-            // 背景常驻工具：只驻菜单栏/状态栏，不在 Dock 显示
-            #[cfg(target_os = "macos")]
-            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
-            load_config_from_store(app.handle());
-            build_tray(app.handle())?;
-            spawn_scheduler(app.handle().clone());
-            Ok(())
-        })
         .on_window_event(|window, event| {
-            // 关主窗 = 收进托盘，调度继续跑
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
             }
-        })
-        .build(tauri::generate_context!())
-        .expect("error while building tauri app")
-        .run(|_app, event| {
-            // 防止最后一个（遮罩）窗口关闭时进程退出；退出只能走托盘 Quit
-            if let RunEvent::ExitRequested { api, .. } = event {
-                api.prevent_exit();
-            }
         });
+
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        apply_schedule,
+        set_paused,
+        get_status,
+    ]);
+
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri app");
+
+    #[cfg(desktop)]
+    app.run(|_app, event| {
+        if let RunEvent::ExitRequested { api, .. } = event {
+            api.prevent_exit();
+        }
+    });
+    #[cfg(mobile)]
+    app.run(|_app, _event| {});
 }

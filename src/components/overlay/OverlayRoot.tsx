@@ -21,15 +21,34 @@ async function closeSelf() {
   }
 }
 
-export default function OverlayRoot() {
+/** 桌面：独立窗口(读 query)；移动端：作为 App 内全屏遮罩(传 props + onClose)。 */
+export default function OverlayRoot({
+  secs,
+  prompt: promptProp,
+  allowSkip: allowSkipProp,
+  onClose,
+}: {
+  secs?: number
+  prompt?: string
+  allowSkip?: boolean
+  onClose?: () => void
+} = {}) {
   const params = new URLSearchParams(location.search)
-  const total = useMemo(() => Math.max(1, parseInt(params.get('secs') || '300', 10)), [])
-  const allowSkip = params.get('skip') === '1'
-  const prompt = decodeURIComponent(params.get('prompt') || '去喝水 · 起来拉伸')
+  const total = useMemo(
+    () => Math.max(1, secs ?? parseInt(params.get('secs') || '300', 10)),
+    [secs],
+  )
+  const allowSkip = allowSkipProp ?? params.get('skip') === '1'
+  const prompt = promptProp ?? decodeURIComponent(params.get('prompt') || '去喝水 · 起来拉伸')
 
   const [remaining, setRemaining] = useState(total)
   const [tip, setTip] = useState(0)
   const deadline = useRef(Date.now() + total * 1000)
+
+  const finish = () => {
+    if (onClose) onClose() // App 内模式
+    else closeSelf() // 独立窗口模式（Rust 也会权威关闭，这里兜底）
+  }
 
   // 用绝对截止时间驱动，避免后台节流导致的漂移
   useEffect(() => {
@@ -38,7 +57,7 @@ export default function OverlayRoot() {
       setRemaining(left)
       if (left <= 0) {
         clearInterval(t)
-        closeSelf() // Rust 也会权威关闭，这里兜底
+        finish()
       }
     }, 250)
     return () => clearInterval(t)
@@ -69,8 +88,11 @@ export default function OverlayRoot() {
         {allowSkip ? (
           <button
             onClick={() => {
-              skipBreak()
-              closeSelf()
+              if (onClose) onClose()
+              else {
+                skipBreak()
+                closeSelf()
+              }
             }}
             className="rounded-full border border-white/15 bg-white/5 px-6 py-2.5 text-[14px] font-medium text-white/70 transition hover:bg-white/10 active:scale-95"
           >

@@ -1,7 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主面板 + 动态遮罩窗的权限",
+  "description": "主面板 + 动态遮罩窗的权限（桌面）",
+  "platforms": ["macOS", "windows", "linux"],
   "windows": ["main", "overlay-*"],
   "permissions": [
     "core:default",
